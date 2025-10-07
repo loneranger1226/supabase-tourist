@@ -4,6 +4,7 @@ CREATE TABLE todos (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   text TEXT NOT NULL,
   completed BOOLEAN NOT NULL DEFAULT FALSE,
+  image_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
