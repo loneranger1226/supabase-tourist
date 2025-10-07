@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Check, Circle, Plus, Trash2, Pencil, X } from "lucide-react";
@@ -11,6 +11,7 @@ type Todo = {
   id: number;
   text: string;
   completed: boolean;
+  user_id?: string;
 };
 
 export default function Home() {
@@ -19,6 +20,10 @@ export default function Home() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -27,9 +32,11 @@ export default function Home() {
     supabase.auth.getUser().then(({ data }) => {
       if (!isMounted) return;
       setIsAuthenticated(!!data.user);
+      setUserId(data.user?.id ?? null);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session?.user);
+      setUserId(session?.user?.id ?? null);
     });
     return () => {
       isMounted = false;
@@ -37,26 +44,85 @@ export default function Home() {
     };
   }, []);
 
-  const addTodo = (e: React.FormEvent) => {
+  useEffect(() => {
+    const supabase = createClient();
+    if (!userId) {
+      setTodos([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("todos")
+        .select("id, text, completed")
+        .order("created_at", { ascending: false });
+      if (error) return;
+      if (!cancelled) setTodos(data as unknown as Todo[]);
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAuthenticated) {
       router.push("/auth/login");
       return;
     }
-    if (newTodo.trim()) {
-      setTodos([...todos, { id: Date.now(), text: newTodo.trim(), completed: false }]);
+    const text = newTodo.trim();
+    if (!text || !userId) return;
+    const supabase = createClient();
+    setIsAdding(true);
+    try {
+      const { data, error } = await supabase
+        .from("todos")
+        .insert({ text, user_id: userId })
+        .select("id, text, completed")
+        .single();
+      if (error) return;
+      setTodos([data as unknown as Todo, ...todos]);
       setNewTodo("");
+    } finally {
+      setIsAdding(false);
     }
   };
 
-  const toggleTodo = (id: number) => {
-    setTodos(todos.map(todo => 
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
-    ));
+  const toggleTodo = async (id: number) => {
+    const supabase = createClient();
+    const current = todos.find(t => t.id === id);
+    if (!current) return;
+    const nextCompleted = !current.completed;
+    setTodos(todos.map(todo => todo.id === id ? { ...todo, completed: nextCompleted } : todo));
+    const { error } = await supabase
+      .from("todos")
+      .update({ completed: nextCompleted })
+      .eq("id", id)
+      .select("id")
+      .single();
+    if (error) {
+      // rollback
+      setTodos(todos.map(todo => todo.id === id ? { ...todo, completed: !nextCompleted } : todo));
+    }
   };
 
-  const deleteTodo = (id: number) => {
+  const deleteTodo = async (id: number) => {
+    const previous = todos;
+    setDeletingId(id);
     setTodos(todos.filter(todo => todo.id !== id));
+    const supabase = createClient();
+    try {
+      const { error } = await supabase
+        .from("todos")
+        .delete()
+        .eq("id", id);
+      if (error) {
+        setTodos(previous);
+      }
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const startEditing = (todo: Todo) => {
@@ -64,13 +130,28 @@ export default function Home() {
     setEditText(todo.text);
   };
 
-  const saveEdit = () => {
-    if (editText.trim() && editingId) {
-      setTodos(todos.map(todo =>
-        todo.id === editingId ? { ...todo, text: editText.trim() } : todo
-      ));
+  const saveEdit = async () => {
+    if (!editText.trim() || !editingId) return;
+    const text = editText.trim();
+    const supabase = createClient();
+    const previous = todos;
+    setSavingId(editingId);
+    setTodos(todos.map(todo => todo.id === editingId ? { ...todo, text } : todo));
+    try {
+      const { error } = await supabase
+        .from("todos")
+        .update({ text })
+        .eq("id", editingId)
+        .select("id")
+        .single();
+      if (error) {
+        setTodos(previous);
+        return;
+      }
       setEditingId(null);
       setEditText("");
+    } finally {
+      setSavingId(null);
     }
   };
 
@@ -94,13 +175,19 @@ export default function Home() {
                 value={newTodo}
                 onChange={(e) => setNewTodo(e.target.value)}
                 placeholder="Add a new task..."
-                className="flex-1 px-4 py-2 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50"
+                className="flex-1 px-4 py-2 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-60"
+                disabled={isAdding}
               />
               <button
                 type="submit"
-                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors duration-200 text-white"
+                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors duration-200 text-white disabled:opacity-60"
+                disabled={isAdding}
               >
-                <Plus className="w-6 h-6" />
+                {isAdding ? (
+                  <span className="text-sm">Adding...</span>
+                ) : (
+                  <Plus className="w-6 h-6" />
+                )}
               </button>
             </div>
           </form>
@@ -132,8 +219,9 @@ export default function Home() {
                       type="text"
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
-                      className="flex-1 px-3 py-1 rounded bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50"
+                      className="flex-1 px-3 py-1 rounded bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-60"
                       autoFocus
+                      disabled={savingId === todo.id}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') saveEdit();
                         if (e.key === 'Escape') cancelEdit();
@@ -141,13 +229,15 @@ export default function Home() {
                     />
                     <button
                       onClick={saveEdit}
-                      className="p-1 text-white hover:text-green-300 transition-colors"
+                      className="p-1 text-white hover:text-green-300 transition-colors disabled:opacity-60"
+                      disabled={savingId === todo.id}
                     >
-                      <Check className="w-5 h-5" />
+                      {savingId === todo.id ? <span className="text-xs">Saving...</span> : <Check className="w-5 h-5" />}
                     </button>
                     <button
                       onClick={cancelEdit}
-                      className="p-1 text-white hover:text-red-300 transition-colors"
+                      className="p-1 text-white hover:text-red-300 transition-colors disabled:opacity-60"
+                      disabled={savingId === todo.id}
                     >
                       <X className="w-5 h-5" />
                     </button>
@@ -173,9 +263,10 @@ export default function Home() {
                     </button>
                     <button
                       onClick={() => deleteTodo(todo.id)}
-                      className="p-1 text-white hover:text-red-300 transition-colors"
+                      className="p-1 text-white hover:text-red-300 transition-colors disabled:opacity-60"
+                      disabled={deletingId === todo.id}
                     >
-                      <Trash2 className="w-5 h-5" />
+                      {deletingId === todo.id ? <span className="text-xs">Deleting...</span> : <Trash2 className="w-5 h-5" />}
                     </button>
                   </div>
                 )}
