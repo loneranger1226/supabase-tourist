@@ -184,23 +184,42 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md mx-auto">
+      <div className="max-w-2xl mx-auto">
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-xl p-6">
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-3xl font-bold text-white">Todo List</h1>
           </div>
 
           <form onSubmit={addTodo} className="mb-6">
-            <div className="flex gap-2 flex-wrap sm:flex-nowrap items-stretch">
-              <input
-                type="text"
-                value={newTodo}
-                onChange={(e) => setNewTodo(e.target.value)}
-                placeholder="Add a new task..."
-                className="flex-1 shrink-0 px-4 py-2 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-60"
-                disabled={isAdding}
-              />
-              <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="space-y-3">
+              {/* 输入框行 */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newTodo}
+                  onChange={(e) => setNewTodo(e.target.value)}
+                  placeholder="Add a new task..."
+                  className="flex-1 px-4 py-2 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-60"
+                  disabled={isAdding}
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors duration-200 text-white disabled:opacity-60 shrink-0 flex items-center gap-2"
+                  disabled={isAdding}
+                >
+                  {isAdding ? (
+                    <span className="text-sm">Adding...</span>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      <span className="hidden sm:inline">Add</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              
+              {/* 图片选择行 */}
+              <div className="flex items-center gap-2">
                 <input
                   id="todo-image"
                   type="file"
@@ -211,32 +230,32 @@ export default function Home() {
                 />
                 <label
                   htmlFor="todo-image"
-                  className="shrink-0 cursor-pointer px-3 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors duration-200 text-white border border-white/30"
+                  className="cursor-pointer px-3 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors duration-200 text-white border border-white/30 flex items-center gap-2"
                 >
-                  选择图片
+                  <span>📷</span>
+                  <span>选择图片</span>
                 </label>
                 <span
-                  className="text-white/80 text-sm truncate min-w-0 whitespace-nowrap flex-1"
+                  className="text-white/80 text-sm truncate flex-1"
                   title={newImageFile ? newImageFile.name : "未选择文件"}
                 >
                   {newImageFile
-                    ? (newImageFile.name.length > 10
-                      ? newImageFile.name.slice(0, 10) + "…"
+                    ? (newImageFile.name.length > 20
+                      ? newImageFile.name.slice(0, 20) + "…"
                       : newImageFile.name)
                     : "未选择文件"}
                 </span>
-              </div>
-              <button
-                type="submit"
-                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors duration-200 text-white disabled:opacity-60 shrink-0 justify-center min-w-[88px]"
-                disabled={isAdding}
-              >
-                {isAdding ? (
-                  <span className="text-sm">Adding...</span>
-                ) : (
-                  <Plus className="w-6 h-6" />
+                {newImageFile && (
+                  <button
+                    type="button"
+                    onClick={() => setNewImageFile(null)}
+                    className="text-white/60 hover:text-white/80 transition-colors"
+                    disabled={isAdding}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
           </form>
 
