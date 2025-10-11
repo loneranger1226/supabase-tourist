@@ -11,7 +11,7 @@ export async function AuthButton() {
 
   return user ? (
     <form action={logout} className="flex items-center gap-4">
-      Hey, {user.email}!
+      欢迎, {user.email}!
       <Button type="submit" size="sm" variant={"outline"}>退出登录</Button>
     </form>
   ) : (

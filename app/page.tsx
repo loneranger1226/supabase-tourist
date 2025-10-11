@@ -25,7 +25,7 @@ export default function Home() {
   const [isAdding, setIsAdding] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [newImageFile, setNewImageFile] = useState<File | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -75,37 +75,44 @@ export default function Home() {
     }
     const text = newTodo.trim();
     if (!text || !userId) return;
-    const supabase = createClient();
+    
     setIsAdding(true);
     try {
-      // 1) 如果有图片，先上传到 windofsummer/{userId}/{timestamp}-{filename}
-      let imageUrl: string | null = null;
-      if (newImageFile) {
-        const path = `${userId}/${Date.now()}-${newImageFile.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from("windofsummer")
-          .upload(path, newImageFile, {
-            cacheControl: "3600",
-            upsert: false,
-          });
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage
-            .from("windofsummer")
-            .getPublicUrl(path);
-          imageUrl = urlData.publicUrl;
-        }
+      // 调用后端API进行AI解析
+      const response = await fetch('/api/parse-todos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text,
+          userId,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'AI解析失败');
       }
 
-      // 2) 插入 todo，并保存 image_url（如果存在）
-      const { data, error } = await supabase
-        .from("todos")
-        .insert({ text, user_id: userId, image_url: imageUrl })
-        .select("id, text, completed, image_url")
-        .single();
-      if (error) return;
-      setTodos([data as unknown as Todo, ...todos]);
-      setNewTodo("");
-      setNewImageFile(null);
+      if (result.success && result.todos) {
+        // 将新解析的待办事项添加到列表顶部
+        setTodos([...result.todos, ...todos]);
+        setNewTodo("");
+        
+        // 显示成功提示
+        const count = result.todos.length;
+        setSuccessMessage(`成功添加 ${count} 个待办事项`);
+        
+        // 3秒后自动隐藏提示
+        setTimeout(() => {
+          setSuccessMessage(null);
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('添加待办事项失败:', error);
+      alert('AI解析失败，请重试');
     } finally {
       setIsAdding(false);
     }
@@ -187,19 +194,19 @@ export default function Home() {
       <div className="max-w-2xl mx-auto">
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-xl p-6">
           <div className="flex items-center justify-between mb-8">
-            <h1 className="text-3xl font-bold text-white">Todo List</h1>
+            <h1 className="text-3xl font-bold text-white">待办事项</h1>
           </div>
 
           <form onSubmit={addTodo} className="mb-6">
             <div className="space-y-3">
-              {/* 输入框行 */}
+              {/* 文本域行 */}
               <div className="flex gap-2">
-                <input
-                  type="text"
+                <textarea
                   value={newTodo}
                   onChange={(e) => setNewTodo(e.target.value)}
-                  placeholder="Add a new task..."
-                  className="flex-1 px-4 py-2 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-60"
+                  placeholder="描述你的待办事项，AI会帮你解析成具体的任务..."
+                  rows={3}
+                  className="flex-1 px-4 py-2 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 disabled:opacity-60 resize-none"
                   disabled={isAdding}
                 />
                 <button
@@ -208,56 +215,27 @@ export default function Home() {
                   disabled={isAdding}
                 >
                   {isAdding ? (
-                    <span className="text-sm">Adding...</span>
+                    <span className="text-sm">AI解析中...</span>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
-                      <span className="hidden sm:inline">Add</span>
+                      <span className="hidden sm:inline">AI解析并添加</span>
                     </>
                   )}
                 </button>
               </div>
-              
-              {/* 图片选择行 */}
-              <div className="flex items-center gap-2">
-                <input
-                  id="todo-image"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setNewImageFile(e.target.files?.[0] ?? null)}
-                  className="sr-only"
-                  disabled={isAdding}
-                />
-                <label
-                  htmlFor="todo-image"
-                  className="cursor-pointer px-3 py-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors duration-200 text-white border border-white/30 flex items-center gap-2"
-                >
-                  <span>📷</span>
-                  <span>选择图片</span>
-                </label>
-                <span
-                  className="text-white/80 text-sm truncate flex-1"
-                  title={newImageFile ? newImageFile.name : "未选择文件"}
-                >
-                  {newImageFile
-                    ? (newImageFile.name.length > 20
-                      ? newImageFile.name.slice(0, 20) + "…"
-                      : newImageFile.name)
-                    : "未选择文件"}
-                </span>
-                {newImageFile && (
-                  <button
-                    type="button"
-                    onClick={() => setNewImageFile(null)}
-                    className="text-white/60 hover:text-white/80 transition-colors"
-                    disabled={isAdding}
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
             </div>
           </form>
+
+          {/* 成功提示 */}
+          {successMessage && (
+            <div className="mb-4 p-3 rounded-lg bg-green-500/20 border border-green-500/30 text-green-100 text-center animate-in fade-in duration-300">
+              <div className="flex items-center justify-center gap-2">
+                <Check className="w-4 h-4" />
+                <span>{successMessage}</span>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-3">
             {todos.map((todo) => (
@@ -302,7 +280,7 @@ export default function Home() {
                       className="p-1 text-white hover:text-green-300 transition-colors disabled:opacity-60"
                       disabled={savingId === todo.id}
                     >
-                      {savingId === todo.id ? <span className="text-xs">Saving...</span> : <Check className="w-5 h-5" />}
+                      {savingId === todo.id ? <span className="text-xs">保存中...</span> : <Check className="w-5 h-5" />}
                     </button>
                     <button
                       onClick={cancelEdit}
@@ -336,7 +314,7 @@ export default function Home() {
                       className="p-1 text-white hover:text-red-300 transition-colors disabled:opacity-60"
                       disabled={deletingId === todo.id}
                     >
-                      {deletingId === todo.id ? <span className="text-xs">Deleting...</span> : <Trash2 className="w-5 h-5" />}
+                      {deletingId === todo.id ? <span className="text-xs">删除中...</span> : <Trash2 className="w-5 h-5" />}
                     </button>
                   </div>
                 )}
@@ -346,7 +324,7 @@ export default function Home() {
 
           {todos.length === 0 && (
             <div className="text-center text-white/70 mt-8">
-              {isAuthenticated === false && "登录后制定Todo"}
+              {isAuthenticated === false && "请先登录后制定待办事项"}
               {isAuthenticated === true && "开始计划点什么吧"}
             </div>
           )}
